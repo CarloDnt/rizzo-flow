@@ -1,5 +1,7 @@
 """Strict public request contract. Model outputs never supply JSON or field names."""
 
+import base64
+import binascii
 import json
 from typing import Annotated, Literal
 
@@ -8,6 +10,20 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints,
 Text = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=8000)]
 Number = Annotated[float, Field(allow_inf_nan=False, ge=-1e100, le=1e100)]
 MAX_SLOTS = 26  # every candidate, special ones included, is one uppercase answer letter
+MAX_IMAGES = 4
+MAX_IMAGE_CHARACTERS = 4_000_000  # base64 text of one image, about 3 MB of PNG or JPEG
+IMAGE_SIGNATURES = (b"\x89PNG\r\n\x1a\n", b"\xff\xd8\xff")  # PNG, JPEG
+Image = Annotated[str, StringConstraints(min_length=16, max_length=MAX_IMAGE_CHARACTERS)]
+
+
+def check_image(value: str) -> None:
+    """Base64 of a PNG or JPEG file; only a vision backend reads it (`backend_vision`)."""
+    try:
+        head = base64.b64decode(value, validate=True)[:8]
+    except binascii.Error as error:
+        raise ValueError("Images must be base64 without a data: prefix") from error
+    if not head.startswith(IMAGE_SIGNATURES):
+        raise ValueError("Images must be PNG or JPEG files")
 
 
 class Strict(BaseModel):
@@ -94,6 +110,8 @@ Question = Annotated[
 
 class Request(Strict):
     state: str | dict[str, JsonValue] | list[JsonValue]
+    # Part of the evidence, shown before the state: needs a vision model (`rizzo serve --vision`).
+    images: list[Image] = Field(default_factory=list, max_length=MAX_IMAGES)
     questions: dict[str, Question] = Field(min_length=1, max_length=64)
     mode: Literal["shared", "direct"] = "shared"
 
@@ -104,6 +122,8 @@ class Request(Strict):
         rendered = json.dumps(self.state, ensure_ascii=False, allow_nan=False)
         if len(rendered.encode()) > 256_000:
             raise ValueError("State exceeds 256 KB; no silent truncation")
+        for image in self.images:
+            check_image(image)
         if any(not key.strip() or len(key) > 128 for key in self.questions):
             raise ValueError("Question IDs must have 1–128 nonblank characters")
         return self

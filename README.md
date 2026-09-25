@@ -151,6 +151,33 @@ differently): compare on your own workload, and note that a calibration is bound
 backend and file it was fitted on.
 
 <details>
+<summary><b>Experimental: images with a vision model</b> (<code>--vision</code>, branch <code>vlm-costmap-image</code>)</summary>
+
+Requests may carry `images` (up to 4 base64 PNG or JPEG files, no `data:` prefix) next to the
+`state`, on both endpoints. They need a vision-language model, served through llama.cpp's own
+`llama-server`, which the pinned runtime ships:
+
+```bash
+rizzo download --vision --only weights   # Qwen/Qwen3-VL-4B-Instruct-GGUF: Q8_0 4.3 GB + mmproj F16 0.8 GB
+rizzo serve --vision                     # or --model file.gguf --mmproj projector.gguf
+```
+
+`rizzo serve` starts `llama-server` as a child process on a free local port (output in
+`llama-server.log`) and keeps the prompt, the answer letters and the softmax: each image
+becomes a media marker at the start of `<evidence>`, and the letter scores are llama-server's
+log-softmax of the raw logits (`n_probs`, before any sampler), which the softmax over the
+offered letters turns back into the same probabilities as the logits would. llama-server
+draws a random media marker at startup; Rizzo swaps it in for its own markers when sending, so
+text in a request can never stand for an image. The served ID is
+`rizzo-qwen3-vl-4b-instruct-q8_0`; `usage.input_tokens` counts the image tokens. A text-only
+model answers a request with images with 422.
+
+Measured once (Apple M5, Metal, 6 requests of 2,000–2,500 tokens with a 672 × 672 PNG = 441
+image tokens): 6.3–7.0 s per decision, 8.8 s after a few minutes of load; prompt evaluation
+280–390 tokens/s, Rizzo's own work 0.04 s. **No accuracy has been measured.**
+</details>
+
+<details>
 <summary><b>Optional: the MLX runtime</b> (<code>--backend mlx</code>) — what this project ran on until September 2026</summary>
 
 Every result marked "MLX" below was measured with it, and it is still there as an opt-in:
@@ -511,6 +538,10 @@ evaluator reports accuracy, NLL, Brier, ECE and coverage.
 - One resident model; concurrent requests are serialized.
 - English is strongest; an Italian boolean flipped between BF16 and 8 bit in our smoke set (MLX).
 - Localhost by default; no rate limiting; not hardened for public exposure.
+- Vision models (`--vision`, experimental): one full pass per question, no shared prefix; an
+  offered letter outside llama-server's top 256 tokens gets the lowest reported score (counted
+  in `x_rizzo.timing.letters_below_top_n`); if Rizzo is killed with SIGKILL, its llama-server
+  child keeps running. Never evaluated on any benchmark.
 
 ## Development
 

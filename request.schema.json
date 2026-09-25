@@ -248,6 +248,16 @@
       ],
       "title": "State"
     },
+    "images": {
+      "items": {
+        "maxLength": 4000000,
+        "minLength": 16,
+        "type": "string"
+      },
+      "maxItems": 4,
+      "title": "Images",
+      "type": "array"
+    },
     "questions": {
       "additionalProperties": {
         "discriminator": {

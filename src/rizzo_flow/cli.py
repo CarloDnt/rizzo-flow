@@ -1,9 +1,20 @@
 import argparse
 import json
+import signal
 import sys
 from pathlib import Path
 
-from .config import DEFAULT_QUANT, DEFAULT_SIZE, MODELS, QUANTS, download_gguf, download_model
+from .config import (
+    DEFAULT_QUANT,
+    DEFAULT_SIZE,
+    DEFAULT_VISION,
+    MODELS,
+    QUANTS,
+    VISION,
+    download_gguf,
+    download_model,
+    download_vision,
+)
 from .llama_release import ACCELERATORS
 from .loader import BACKENDS, DEVICES
 
@@ -55,6 +66,12 @@ def main():
     )
     download.add_argument("--only", choices=("runtime", "weights"))
     download.add_argument("--destination", type=Path, help="Weights; default: under models/")
+    vision_help = (
+        f"vision-language model and its projector instead of Spark (default {DEFAULT_VISION})"
+    )
+    download.add_argument(
+        "--vision", nargs="?", const=DEFAULT_VISION, choices=tuple(VISION), help=vision_help
+    )
     schema = commands.add_parser("schema", help="Print the JSON Schema for requests")
     schema.add_argument("--output")
     schema.add_argument("--response", action="store_true", help="Print the output schema")
@@ -77,6 +94,12 @@ def main():
             help="auto = best GPU of the installed runtime, else CPU; a family name requires it",
         )
         p.add_argument("--threads", type=int, help="CPU threads (llama backend)")
+        p.add_argument(
+            "--vision", nargs="?", const=DEFAULT_VISION, choices=tuple(VISION), help=vision_help
+        )
+        p.add_argument(
+            "--mmproj", type=Path, help="Image projector GGUF for --model: serves a vision model"
+        )
         p.add_argument("--batch-size", type=int, default=4)
         # --max-tokens is the former name, kept as an alias.
         p.add_argument(
@@ -107,7 +130,9 @@ def main():
                 from .llama_release import install
 
                 print(install(args.runtime, progress))
-            if args.only != "runtime":
+            if args.only != "runtime" and args.vision:
+                print("\n".join(map(str, download_vision(args.vision, progress))))
+            elif args.only != "runtime":
                 print(download_gguf(args.size, args.quant, args.destination, progress))
             return
         if args.command == "devices":
@@ -148,24 +173,34 @@ def main():
             ctx=args.ctx,
             batch_size=args.batch_size,
             threads=args.threads,
+            vision=args.vision,
+            mmproj=args.mmproj,
         )
-        calibration = Calibration.from_file(args.calibration) if args.calibration else None
-        engine = Engine(backend, ctx=args.ctx, calibration=calibration)
-        if args.command == "decide":
-            write_json(engine.decide(request), args.output)
-        elif args.command == "evaluate":
-            from .evaluation import evaluate
+        try:
+            calibration = Calibration.from_file(args.calibration) if args.calibration else None
+            engine = Engine(backend, ctx=args.ctx, calibration=calibration)
+            if args.command == "decide":
+                write_json(engine.decide(request), args.output)
+            elif args.command == "evaluate":
+                from .evaluation import evaluate
 
-            write_json(
-                evaluate(engine, read_jsonl(args.input), args.repeats, args.compare_modes),
-                args.output,
-            )
-        elif args.command == "serve":
-            import uvicorn
+                write_json(
+                    evaluate(engine, read_jsonl(args.input), args.repeats, args.compare_modes),
+                    args.output,
+                )
+            elif args.command == "serve":
+                import uvicorn
 
-            from .api import create_app
+                from .api import create_app
 
-            uvicorn.run(create_app(engine), host=args.host, port=args.port)
+                if hasattr(backend, "close"):
+                    # uvicorn re-raises SIGTERM after its graceful shutdown, which would end the
+                    # process before `finally` and leave the llama-server child holding the GPU.
+                    signal.signal(signal.SIGTERM, lambda signum, _: sys.exit(128 + signum))
+                uvicorn.run(create_app(engine), host=args.host, port=args.port)
+        finally:
+            if hasattr(backend, "close"):  # the vision backend's llama-server child process
+                backend.close()
     except (ValueError, OSError, ImportError) as error:
         print(f"rizzo: {error}", file=sys.stderr)
         raise SystemExit(1) from error

@@ -21,6 +21,9 @@ SYSTEM = (
     "- Reply with that option's uppercase letter and nothing else."
 )
 CLOSING = "Answer with the letter of the best option."
+# llama.cpp's mtmd_default_marker(): llama-server swaps each one for an image, in order. Text-only
+# requests never contain it, so their prompts (and PROMPT_VERSION) are unchanged.
+MEDIA_MARKER = "<__media__>"
 
 
 NUMERIC_GUIDANCE = (
@@ -36,6 +39,7 @@ class Compiled:
     tokens: list[int]
     slots: list[int]
     prompt_sha256: str
+    prompt: str = ""  # rendered text; the vision backend sends it with the images
 
 
 def canonical(value) -> str:
@@ -44,15 +48,19 @@ def canonical(value) -> str:
     )
 
 
-def render_state(state) -> str:
-    """Shared head of the user message; identical for every question, so it is prefilled once."""
+def render_state(state, images: int = 0) -> str:
+    """Shared head of the user message; identical for every question, so it is prefilled once.
+    Images open the evidence, one media marker per line, before the state."""
     # Free text goes between the tags as is; structured state, or text imitating the closing
     # tag, falls back to JSON inside the tags.
     if isinstance(state, str) and "</evidence>" not in state.lower():
         body = state.strip()
     else:
         body = json.dumps(state, ensure_ascii=False, indent=1)
-    return f"<evidence>\n{body}\n</evidence>"
+    if images and MEDIA_MARKER in body:
+        raise ValueError(f"State text contains the media marker {MEDIA_MARKER}")
+    media = f"{MEDIA_MARKER}\n" * images
+    return f"<evidence>\n{media}{body}\n</evidence>"
 
 
 def render_question(instruction: str, descriptions: list[str]) -> str:
@@ -65,7 +73,7 @@ def render_question(instruction: str, descriptions: list[str]) -> str:
 
 
 def compile_request(tokenizer, request: Request, ctx: int) -> tuple[list[int], list[Compiled]]:
-    state_text = render_state(request.state)
+    state_text = render_state(request.state, len(request.images))
     compiled = []
     state_prefix = None
     for key, question in request.questions.items():
@@ -115,5 +123,7 @@ def compile_request(tokenizer, request: Request, ctx: int) -> tuple[list[int], l
             state_prefix = prefix
         elif state_prefix != prefix:
             raise ValueError("State prefix differs between questions")
-        compiled.append(Compiled(key, tokens, slots, hashlib.sha256(prompt.encode()).hexdigest()))
+        compiled.append(
+            Compiled(key, tokens, slots, hashlib.sha256(prompt.encode()).hexdigest(), prompt)
+        )
     return state_prefix or [], compiled

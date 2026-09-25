@@ -32,14 +32,23 @@ class Engine:
         request = Request.model_validate(
             request.model_dump() if isinstance(request, Request) else request
         )
+        vision = getattr(self.backend, "vision", False)
+        if request.images and not vision:
+            raise ValueError(
+                "This model reads text only; images need a vision model (`rizzo serve --vision`)"
+            )
+        # Only a vision backend takes images; the text backends keep their signature.
+        extra = {"images": request.images} if vision else {}
         started = time.perf_counter()
         with self._lock:
             acquired = time.perf_counter()
             prefix, jobs = compile_request(self.backend.tokenizer, request, self.ctx)
             encoded = time.perf_counter()
             logits, timing = self._worker.submit(
-                self.backend.score, prefix, jobs, request.mode
+                self.backend.score, prefix, jobs, request.mode, **extra
             ).result()
+            # Image tokens are counted by the runtime, not by the tokenizer.
+            counted = timing.pop("input_tokens", {})
             answers = {}
             for job in jobs:
                 question = request.questions[job.id]
@@ -50,7 +59,7 @@ class Engine:
                 )
                 answers[job.id] = decode(question, logits[job.id], temperature)
                 answers[job.id]["prompt_sha256"] = job.prompt_sha256
-                answers[job.id]["input_tokens"] = len(job.tokens)
+                answers[job.id]["input_tokens"] = counted.get(job.id, len(job.tokens))
         response = {
             "model": self.backend.metadata,
             "mode": request.mode,

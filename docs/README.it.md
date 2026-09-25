@@ -66,6 +66,28 @@ curl http://127.0.0.1:8017/v1/decisions \
 `GET /health` restituisce stato e provenienza del modello. Il server ascolta soltanto su localhost
 per impostazione predefinita; la distribuzione pubblica non è inclusa.
 
+### Immagini con un modello vision (sperimentale, branch `vlm-costmap-image`)
+
+Le richieste possono portare `images` (fino a 4 PNG o JPEG in base64, senza prefisso `data:`)
+accanto allo `state`. Servono un modello vision-language e il `llama-server` incluso nel runtime:
+
+```bash
+rizzo download --vision --only weights   # Qwen/Qwen3-VL-4B-Instruct-GGUF: Q8_0 4.3 GB + mmproj F16 0.8 GB
+rizzo serve --vision                     # oppure --model file.gguf --mmproj proiettore.gguf
+```
+
+`rizzo serve` avvia `llama-server` come processo figlio su una porta locale libera (log in
+`llama-server.log`) e mantiene prompt, lettere di risposta e softmax: ogni immagine diventa un
+marcatore all'inizio di `<evidence>`, e i punteggi delle lettere sono la log-softmax dei logit
+grezzi di llama-server (`n_probs`, prima di qualunque sampler). llama-server sceglie a caso un
+marcatore all'avvio; Rizzo lo sostituisce ai propri al momento dell'invio, così il testo di una
+richiesta non può mai valere come immagine. Un modello solo testo risponde 422 a una richiesta
+con immagini.
+
+Misurato una volta (Apple M5, Metal, 6 richieste da 2.000–2.500 token con un PNG 672 × 672 = 441
+token immagine): 6,3–7,0 s a decisione, 8,8 s dopo qualche minuto di carico; valutazione del
+prompt 280–390 token/s, lavoro di Rizzo 0,04 s. **Accuratezza non misurata.**
+
 ## Playground
 
 Con il server avviato: <http://127.0.0.1:8017/playground>. Builder di domande noul/choice/score,

@@ -104,6 +104,45 @@ DEFAULT_QUANT = "q8_0"
 DEFAULT_MODEL_PATH = MODELS[DEFAULT_SIZE].path
 
 
+@dataclass(frozen=True)
+class VisionSpec:
+    """A vision-language checkpoint: language model and image projector (mmproj) as GGUF files.
+
+    Served through llama.cpp's own server (`backend_vision`), not the in-process ctypes path."""
+
+    name: str
+    source: str  # original checkpoint, reported as the model's source
+    model: GgufSpec
+    projector: GgufSpec
+
+
+_GGUF_QWEN3_VL_4B = ("Qwen/Qwen3-VL-4B-Instruct-GGUF", "1cd86afb9a95c410a6038ab3b40d8b578c892266")
+VISION = {
+    spec.name: spec
+    for spec in (
+        VisionSpec(
+            "qwen3-vl-4b",
+            "Qwen/Qwen3-VL-4B-Instruct",
+            GgufSpec(
+                "qwen3-vl-4b",
+                "q8_0",
+                *_GGUF_QWEN3_VL_4B,
+                "Qwen3VL-4B-Instruct-Q8_0.gguf",
+                "054721f478bc5fa6beffb7f38eae575d45298f88cbb8d2f83ef675a727863eb1",
+            ),
+            GgufSpec(
+                "qwen3-vl-4b",
+                "f16",
+                *_GGUF_QWEN3_VL_4B,
+                "mmproj-Qwen3VL-4B-Instruct-F16.gguf",
+                "256f3a43bd4205ffef48d6b92715e1e70b5b0e9aef06522584967513a9985331",
+            ),
+        ),
+    )
+}
+DEFAULT_VISION = "qwen3-vl-4b"
+
+
 def identify(config: dict) -> ModelSpec:
     """Match a checkpoint's config.json to a supported, pinned model."""
     for spec in MODELS.values():
@@ -121,6 +160,16 @@ def download_gguf(size=DEFAULT_SIZE, quant=DEFAULT_QUANT, destination=None, prog
 
     spec = GGUF[(size, quant)]
     return fetch(spec.url, Path(destination) if destination else spec.path, spec.sha256, progress)
+
+
+def download_vision(name=DEFAULT_VISION, progress=None):
+    """Fetch the pinned model and projector of a vision checkpoint, each verified by sha256."""
+    from .llama_release import fetch
+
+    spec = VISION[name]
+    return [
+        fetch(part.url, part.path, part.sha256, progress) for part in (spec.model, spec.projector)
+    ]
 
 
 def download_model(destination=None, size=DEFAULT_SIZE):

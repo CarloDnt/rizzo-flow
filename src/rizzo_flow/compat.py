@@ -53,6 +53,8 @@ WireQuestion = Annotated[NoulQuestion | ChoiceQuestion | ScoreQuestion, Field(di
 
 class SystemOneRequest(Wire):
     state: Structured
+    # Rizzo extension, not in the TypeSafe contract: base64 PNG/JPEG evidence for vision models.
+    images: list[str] | None = None
     model: str = Field(min_length=1, max_length=128)
     questions: dict[str, WireQuestion] = Field(min_length=1, max_length=64)
 
@@ -129,7 +131,8 @@ def to_native(request: SystemOneRequest) -> tuple[Request, dict[str, list[str]]]
             native["type"] = "score"
             native["levels"] = [text(level) for level in question.criteria]
         questions[key] = native
-    return Request.model_validate({"state": request.state, "questions": questions}), options
+    native = {"state": request.state, "images": request.images or [], "questions": questions}
+    return Request.model_validate(native), options
 
 
 def confidence(probabilities) -> float:

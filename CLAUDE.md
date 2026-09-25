@@ -129,6 +129,29 @@ richieste HTTP concorrenti sono serializzate; il parallelismo è *dentro* la ric
 - **Template Spark.** Il chat template antepone `you are a helpful assistant.\n\n` al system
   prompt e, con `enable_thinking=False`, il prompt termina con `<|Bot|></think>`: la lettera è il
   primo token dopo `</think>`, senza spazio (`"A"` = 46, `" A"` = 401 sono token diversi).
+- **Backend vision (branch `vlm-costmap-image`, 25 settembre 2026, per JEVNAV).**
+  `backend_vision.py`: `rizzo serve --vision` (coppia pinnata `config.VISION`: Qwen3-VL-4B-Instruct
+  Q8_0 + mmproj F16, `Qwen/Qwen3-VL-4B-Instruct-GGUF@1cd86af`) o `--model` + `--mmproj`. Il path
+  ctypes non gestisce le posizioni M-RoPE delle immagini, quindi si avvia il `llama-server` del
+  runtime come processo figlio (porta libera, `--parallel 1`, log in `llama-server.log`, chiuso da
+  `cli` e da `atexit`). Tokenizer = template del GGUF da `/props` reso con `compile_template` +
+  `/tokenize`. `score`: una `/completion` per domanda (`n_predict: 1`, `n_probs: 256`,
+  `cache_prompt: false`); `top_logprobs` = log-softmax dei logit grezzi su tutto il vocabolario
+  (verificato nel sorgente b11081, `get_token_probabilities`), quindi `decode` ridà la softmax
+  sulle lettere. `Request.images` (max 4, PNG/JPEG base64, `schema.check_image`),
+  `SystemOneRequest.images` (estensione, non Jev); `prompts.MEDIA_MARKER` = `<__media__>` apre
+  `<evidence>` solo con immagini (prompt testuali invariati, `PROMPT_VERSION` invariata; il
+  fingerprint vision include `media_marker`). `Engine` rifiuta immagini se il backend non ha
+  `vision = True` e prende `input_tokens` per domanda da `timing["input_tokens"]` (token immagine
+  inclusi). Test: `tests/test_backend_vision.py` con un `FakeClient` al posto di llama-server.
+  **Marcatore casuale:** a b11081 llama-server genera `<__media_…__>` all'avvio (`/props`
+  `media_marker`, env `LLAMA_MEDIA_MARKER`); `<__media__>` letterale non è un'immagine → "Failed
+  to tokenize prompt". Il backend sostituisce i propri marcatori al momento dell'invio.
+  **Chiusura:** uvicorn ri-solleva SIGTERM dopo lo shutdown e il processo moriva prima del
+  `finally`, lasciando llama-server in vita con la GPU occupata: `cli` installa un handler
+  SIGTERM → `SystemExit` (verificato). Solo un SIGKILL lascia il figlio orfano.
+  Smoke sul Mac M5 (25 settembre, costmap di JEVNAV): 2.297–2.468 token (441 immagine), 6,4–8,8 s
+  a decisione, prompt 280–390 token/s; mai misurato su benchmark.
 
 ### Due API nello stesso server (`api.py`)
 

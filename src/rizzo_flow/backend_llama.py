@@ -20,19 +20,24 @@ ARCHITECTURE = "spark2_5"
 FILE_TYPES = {"1": "f16", "7": "q8_0", "15": "q4_k_m", "32": "bf16"}
 
 
+def compile_template(template: str):
+    """A GGUF chat template, ready to render the way transformers renders it."""
+    from jinja2.sandbox import ImmutableSandboxedEnvironment
+
+    def raise_exception(message):
+        raise ValueError(message)
+
+    environment = ImmutableSandboxedEnvironment(trim_blocks=True, lstrip_blocks=True)
+    environment.globals["raise_exception"] = raise_exception
+    return environment.from_string(template)
+
+
 class LlamaTokenizer:
     """The two tokenizer calls `prompts.compile_request` makes, served by the GGUF itself:
     its chat template rendered the way transformers renders it, its vocabulary for encoding."""
 
     def __init__(self, session, template: str):
-        from jinja2.sandbox import ImmutableSandboxedEnvironment
-
-        def raise_exception(message):
-            raise ValueError(message)
-
-        environment = ImmutableSandboxedEnvironment(trim_blocks=True, lstrip_blocks=True)
-        environment.globals["raise_exception"] = raise_exception
-        self.template = environment.from_string(template)
+        self.template = compile_template(template)
         self.session = session
         self.pad_token_id = session.pad_token
         self.eos_token_id = session.eos_token

@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from .config import DEFAULT_QUANT, DEFAULT_SIZE, GGUF, MODELS
+from .config import DEFAULT_QUANT, DEFAULT_SIZE, DEFAULT_VISION, GGUF, MODELS, VISION
 
 BACKENDS = ("llama", "mlx")
 # `auto`, `gpu` and `cpu` work everywhere. The other names ask for one GPU family: `mlx` and
@@ -22,9 +22,13 @@ def load_backend(
     ctx=8192,
     batch_size=4,
     threads=None,
+    vision=None,
+    mmproj=None,
 ):
     if backend not in BACKENDS:
         raise ValueError(f"Backend must be one of: {', '.join(BACKENDS)}")
+    if vision or mmproj:
+        return _load_vision(backend, vision, model, mmproj, quant, bits, device, ctx, threads)
     if backend == "mlx":
         if quant:
             raise ValueError("--quant selects a GGUF file (llama backend); with MLX use --bits 4|8")
@@ -54,6 +58,32 @@ def load_backend(
         device=device,
         ctx=ctx,
         batch_size=batch_size,
+        threads=threads,
+    )
+
+
+def _load_vision(backend, vision, model, mmproj, quant, bits, device, ctx, threads):
+    """A vision-language model: the pinned pair (`--vision`) or `--model` with `--mmproj`."""
+    if backend != "llama":
+        raise ValueError("Vision models run on llama.cpp only: drop --backend mlx")
+    if quant or bits:
+        raise ValueError(
+            "--quant and --bits pick Spark files; a vision model is --vision or --mmproj"
+        )
+    if device == "mlx":
+        raise ValueError("--device mlx needs --backend mlx; with llama.cpp use --device metal")
+    if mmproj and not model:
+        raise ValueError("--mmproj needs --model, the language model GGUF it belongs to")
+    if vision and vision not in VISION:
+        raise ValueError(f"Vision models: {', '.join(VISION)}")
+    spec = VISION[vision or DEFAULT_VISION]
+    from .backend_vision import VisionBackend
+
+    return VisionBackend.load(
+        model or spec.model.path,
+        mmproj or spec.projector.path,
+        device=device,
+        ctx=ctx,
         threads=threads,
     )
 
