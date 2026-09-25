@@ -86,7 +86,9 @@ con immagini.
 
 Misurato una volta (Apple M5, Metal, 6 richieste da 2.000–2.500 token con un PNG 672 × 672 = 441
 token immagine): 6,3–7,0 s a decisione, 8,8 s dopo qualche minuto di carico; valutazione del
-prompt 280–390 token/s, lavoro di Rizzo 0,04 s. **Accuratezza non misurata.**
+prompt 280–390 token/s, lavoro di Rizzo 0,04 s. Con un PNG 1344 × 1344 (1764 token immagine,
+la misura che JEVNAV ora invia perché Qwen-VL abbia almeno i 1024 token raccomandati da
+llama.cpp): 3.781–3.791 token, 10,2–10,6 s. **Accuratezza non misurata.**
 
 ## Playground
 

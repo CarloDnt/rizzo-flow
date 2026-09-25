@@ -174,7 +174,9 @@ model answers a request with images with 422.
 
 Measured once (Apple M5, Metal, 6 requests of 2,000–2,500 tokens with a 672 × 672 PNG = 441
 image tokens): 6.3–7.0 s per decision, 8.8 s after a few minutes of load; prompt evaluation
-280–390 tokens/s, Rizzo's own work 0.04 s. **No accuracy has been measured.**
+280–390 tokens/s, Rizzo's own work 0.04 s. With a 1344 × 1344 PNG (1764 image tokens, the
+size JEVNAV now sends so that Qwen-VL gets at least the 1024 tokens llama.cpp recommends):
+3,781–3,791 tokens, 10.2–10.6 s. **No accuracy has been measured.**
 </details>
 
 <details>

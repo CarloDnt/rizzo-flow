@@ -151,7 +151,9 @@ richieste HTTP concorrenti sono serializzate; il parallelismo è *dentro* la ric
   `finally`, lasciando llama-server in vita con la GPU occupata: `cli` installa un handler
   SIGTERM → `SystemExit` (verificato). Solo un SIGKILL lascia il figlio orfano.
   Smoke sul Mac M5 (25 settembre, costmap di JEVNAV): 2.297–2.468 token (441 immagine), 6,4–8,8 s
-  a decisione, prompt 280–390 token/s; mai misurato su benchmark.
+  a decisione, prompt 280–390 token/s; con PNG 1344 × 1344 (1764 token, nessun ridimensionamento:
+  Qwen-VL in llama.cpp = 32 px per token, 8–4096 token, avviso sotto 1024) 3.781–3.791 token,
+  10,2–10,6 s. Mai misurato su benchmark.
 
 ### Due API nello stesso server (`api.py`)
 
